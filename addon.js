@@ -784,7 +784,7 @@
   let SV = {}; try { SV = JSON.parse(localStorage.getItem('shopv_' + trip) || '{}') || {}; } catch (e) { }   // SV[誰][商品id] = 'r' 推薦 / 'o' 普通 / 'n' 不推
   let SWT = {}; try { SWT = JSON.parse(localStorage.getItem('shopw_' + trip) || '{}') || {}; } catch (e) { }   // 想買：SWT[誰][商品id] = 1
   const shopWantN = iid => Object.values(SWT).filter(v => v && v[iid]).length;
-  const shopOpenSt = {}, shopCatSel = {}; let shopHotOnly = false;   // shopCatSel：每間店目前選的分類標籤（只存在這支手機）
+  const shopOpenSt = {}, shopCatSel = {}; let shopHotOnly = false, shopMine = false;   // shopMine：目前是否在「我的清單」檢視   // shopCatSel：每間店目前選的分類標籤（只存在這支手機）
   const shopCommit = () => { saveData(); renderShop(); };
   const shopTally = iid => { const t = { r: 0, o: 0, n: 0 }; Object.values(SV).forEach(v => { const x = v && v[iid]; if (x in t) t[x]++; }); return t; };
   const shopTh = () => { const st = data.settings || {}; return { hot: Math.max(1, parseInt(st.shopHot) || 3), bad: Math.max(1, parseInt(st.shopBad) || 2), want: Math.max(1, parseInt(st.shopWant) || 3) }; };
@@ -819,6 +819,14 @@
     if (on) SWT[me][iid] = 1; else delete SWT[me][iid];
     try { localStorage.setItem('shopw_' + trip, JSON.stringify(SWT)); } catch (e) { }
     ready.then(() => { const r0 = ref.child('shopw/' + me + '/' + iid); return on ? r0.set(1) : r0.remove(); }).catch(() => toast('❌ 想買未同步', 1));
+    renderShop();
+  };
+  window.shopView = v => { shopMine = v === 'mine'; renderShop(); };
+  window.shopBoughtTog = iid => {   // 我的想買紀錄：1 = 想買，2 = 已買（已買仍算在想買人數裡）
+    SWT[me] = SWT[me] || {}; if (!SWT[me][iid]) return;
+    const v = SWT[me][iid] === 2 ? 1 : 2; SWT[me][iid] = v;
+    try { localStorage.setItem('shopw_' + trip, JSON.stringify(SWT)); } catch (e) { }
+    ready.then(() => ref.child('shopw/' + me + '/' + iid).set(v)).catch(() => toast('❌ 已買記號未同步', 1));
     renderShop();
   };
   window.shopMove = (k, sid, iid, d) => {
@@ -921,30 +929,34 @@
   };
   function shopItemHtml(st, o) {
     const it = o.it, t = o.t, s = o.s, my = (SV[me] || {})[it.id];
-    const myW = (SWT[me] || {})[it.id];
+    const myW = (SWT[me] || {})[it.id], buyRow = shopMine ? `<div class="shop-buy ${myW === 2 ? 'on' : ''}" onclick="shopBoughtTog('${it.id}')">${myW === 2 ? '☑' : '☐'} 已買</div>` : '';
     const tag = (s === 'hot' ? '<span class="shop-tag hot">🔥 激推</span>' : s === 'bad' ? '<span class="shop-tag bad">💣 地雷</span>' : s === 'mix' ? '<span class="shop-tag mix">⚖️ 兩極</span>' : '') + (o.wh ? '<span class="shop-tag want">🛒 熱門想買</span>' : '');
     const pic = it.ph ? `<img class="shop-ph" data-sid="${it.id}" data-pv="${it.pv || 0}" alt="" onclick="this.src&&viewImg(this.src)">` : it.img ? `<img class="shop-ph" src="${esc(it.img)}" alt="" loading="lazy" onclick="viewImg(this.src)" onerror="this.remove()">` : '';
-    return `<div class="shop-item ${s} ${o.wh ? 'want' : ''}"><div class="shop-row">${pic}<div class="shop-main"><div class="shop-nm">${tag}${esc(it.name)}${shopCatTag(it)}</div>${shopMeta(it)}${shopTagsHtml(it)}</div></div>${it.note ? `<div class="shop-note">${md(it.note)}</div>` : ''}<div class="shop-vote">${[['r', '👍', '推薦'], ['o', '😐', '普通'], ['n', '👎', '不推']].map(([k, e, l]) => `<button type="button" class="${k} ${my === k ? 'on' : ''}" onclick="shopVote('${it.id}','${k}')">${e} ${l} ${t[k]}</button>`).join('')}<button type="button" class="w ${myW ? 'on' : ''}" onclick="shopWantTog('${it.id}')">🛒 想買 ${o.w}</button></div><div class="ed admin-only"><span onclick="shopItemEdit('${st.id}','${it.id}')">✏️ 編輯</span><span onclick="shopMove('i','${st.id}','${it.id}',-1)">▲ 上移</span><span onclick="shopMove('i','${st.id}','${it.id}',1)">▼ 下移</span></div></div>`;
+    return `<div class="shop-item ${s} ${o.wh ? 'want' : ''} ${shopMine && myW === 2 ? 'bought' : ''}"><div class="shop-row">${pic}<div class="shop-main"><div class="shop-nm">${tag}${esc(it.name)}${shopCatTag(it)}</div>${shopMeta(it)}${shopTagsHtml(it)}</div></div>${it.note ? `<div class="shop-note">${md(it.note)}</div>` : ''}${buyRow}<div class="shop-vote">${[['r', '👍', '推薦'], ['o', '😐', '普通'], ['n', '👎', '不推']].map(([k, e, l]) => `<button type="button" class="${k} ${my === k ? 'on' : ''}" onclick="shopVote('${it.id}','${k}')">${e} ${l} ${t[k]}</button>`).join('')}<button type="button" class="w ${myW ? 'on' : ''}" onclick="shopWantTog('${it.id}')">🛒 想買 ${o.w}</button></div><div class="ed admin-only"><span onclick="shopItemEdit('${st.id}','${it.id}')">✏️ 編輯</span><span onclick="shopMove('i','${st.id}','${it.id}',-1)">▲ 上移</span><span onclick="shopMove('i','${st.id}','${it.id}',1)">▼ 下移</span></div></div>`;
   }
   function renderShop() {
     const bd = $('shop-body'); if (!bd) return;
     const sts = S().stores, th = shopTh(), rank = o => o.s === 'hot' ? 0 : (o.wh && o.s !== 'bad') ? 1 : o.s === 'mix' ? 2 : o.s === '' ? 3 : 4;   // 激推最前面，其次熱門想買，地雷墊底；同組內想買人數多的在前
     const mgr = (k, lb, nm) => `<div class="shop-catmgr"><span>${lb}</span>${S()[k].map(c => `<span class="shop-chip sm" style="${k === 'cats' ? catStyle(c) : ''}">${esc(c.icon ? c.icon + ' ' : '')}${esc(c.name)} <i onclick="shopLMove('${k}','${c.id}',-1)">◀</i><i onclick="shopLMove('${k}','${c.id}',1)">▶</i><i onclick="shopLEdit('${k}','${c.id}')">✏️</i></span>`).join('')}<span class="shop-chip sm" onclick="shopLEdit('${k}')">+ ${nm}</span></div>`;
     let h = `<div class="admin-only shop-adm"><div class="info-card shop-set">⚙️ <span>🔥 激推：</span><input type="number" min="1" inputmode="numeric" value="${th.hot}" onchange="shopThSet('shopHot',this.value)"> 人推薦　<span>💣 地雷：</span><input type="number" min="1" inputmode="numeric" value="${th.bad}" onchange="shopThSet('shopBad',this.value)"> 人不推　<span>🛒 熱門想買：</span><input type="number" min="1" inputmode="numeric" value="${th.want}" onchange="shopThSet('shopWant',this.value)"> 人想買${mgr('cats', '🗂️ 分類：', '分類')}${mgr('tags', '🔖 標籤：', '標籤')}</div><button class="btn btn-outline" onclick="shopStoreEdit()">+ 新增店家／地點</button></div>`;
-    if (sts.length) h += `<div class="shop-filter"><span class="shop-chip ${shopHotOnly ? 'on' : ''}" onclick="shopFilter(${!shopHotOnly})">🔥 只看激推</span></div>`;
+    const myAll = []; sts.forEach(st => (st.items || []).forEach(it => { const v = (SWT[me] || {})[it.id]; if (v) myAll.push(v); }));
+    const mineN = myAll.length, mineB = myAll.filter(v => v === 2).length;
+    if (sts.length) h += `<div class="shop-filter"><span class="shop-chip ${shopMine ? '' : 'on'}" onclick="shopView('all')">全部商品</span><span class="shop-chip ${shopMine ? 'on' : ''}" onclick="shopView('mine')">🛒 我的清單 ${mineB}/${mineN}</span><span class="shop-chip ${shopHotOnly ? 'on' : ''}" onclick="shopFilter(${!shopHotOnly})">🔥 只看激推</span></div>`;
     else h += '<div class="muted" style="text-align:center;margin-top:40px">還沒有店家<br>（管理員可按上方 + 新增）</div>';
     sts.forEach(st => {
-      const all = (st.items || []).map((it, i) => { const t = shopTally(it.id); const w = shopWantN(it.id); return { it, i, t, s: shopStatus(t), w, wh: w >= th.want }; });
+      const all = (st.items || []).map((it, i) => { const t = shopTally(it.id); const w = shopWantN(it.id); return { it, i, t, s: shopStatus(t), w, wh: w >= th.want }; }).filter(o => !shopMine || (SWT[me] || {})[o.it.id]);
       const cats = S().cats, validCat = o => cats.some(c => c.id === o.it.cat);
       const present = cats.filter(c => all.some(o => o.it.cat === c.id)), noneN = all.filter(o => !validCat(o)).length;
       let sel = shopCatSel[st.id] || ''; if (sel === '_none' ? !(present.length && noneN) : (sel && !present.some(c => c.id === sel))) sel = '';
-      const shown = all.filter(o => (!shopHotOnly || o.s === 'hot') && (!sel || (sel === '_none' ? !validCat(o) : o.it.cat === sel))).sort((a, b) => rank(a) - rank(b) || b.w - a.w || a.i - b.i);
+      const bought = o => shopMine && (SWT[me] || {})[o.it.id] === 2 ? 1 : 0;
+      const shown = all.filter(o => (!shopHotOnly || o.s === 'hot') && (!sel || (sel === '_none' ? !validCat(o) : o.it.cat === sel))).sort((a, b) => bought(a) - bought(b) || rank(a) - rank(b) || b.w - a.w || a.i - b.i);   // 我的清單：已買的沉到最下面
       const chip = (id, label, n) => `<span class="shop-chip sm ${sel === id ? 'on' : ''}" onclick="shopCatPick('${st.id}','${id}')">${label} ${n}</span>`;
       const catChips = present.length ? `<div class="shop-cats">${chip('', '全部', all.length)}${present.map(c => chip(c.id, esc(c.icon ? c.icon + ' ' : '') + esc(c.name), all.filter(o => o.it.cat === c.id).length)).join('')}${noneN ? chip('_none', '未分類', noneN) : ''}</div>` : '';
-      if (shopHotOnly && !shown.length) return;
-      const nHot = all.filter(o => o.s === 'hot').length, open = shopHotOnly ? shopOpenSt[st.id] !== false : !!shopOpenSt[st.id];
+      if ((shopHotOnly || shopMine) && !shown.length) return;
+      const nHot = all.filter(o => o.s === 'hot').length, open = (shopHotOnly || shopMine) ? shopOpenSt[st.id] !== false : !!shopOpenSt[st.id];
       h += `<details class="info-card shop-store" data-store="${st.id}" ${open ? 'open' : ''} ontoggle="shopOpen('${st.id}',this.open,this)"><summary><span>${esc(st.icon || '🏪')} ${esc(st.name)}</span><span class="shop-cnt">${nHot ? `<b class="shop-hotn">🔥${nHot}</b>　` : ''}${all.length} 項</span></summary><div class="shop-list"><div class="admin-only" style="gap:8px"><button class="btn btn-outline" onclick="shopItemEdit('${st.id}')">+ 新增商品</button></div><div class="ed admin-only"><span onclick="shopStoreEdit('${st.id}')">✏️ 編輯店家</span><span onclick="shopMove('s','${st.id}',null,-1)">▲ 上移</span><span onclick="shopMove('s','${st.id}',null,1)">▼ 下移</span></div>${catChips}${shown.map(o => shopItemHtml(st, o)).join('') || '<div class="muted" style="text-align:center;padding:10px">這間店還沒有推薦商品</div>'}</div></details>`;
     });
+    if (shopMine && sts.length && !mineN) h += '<div class="muted" style="text-align:center;margin-top:30px">還沒有想買的商品<br>在商品卡片按「🛒 想買」就會出現在這裡</div>';
     bd.innerHTML = h;
     bd.querySelectorAll('details[open] img[data-sid]').forEach(shopPh);
   }
