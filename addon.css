@@ -335,3 +335,21 @@ details.shop-store{padding:0!important;overflow:hidden}
 .shop-buy.on{background:#DDF1E9;border-style:solid}
 .shop-item.bought{opacity:.62}
 .shop-item.bought .shop-nm{text-decoration:line-through}
+
+/* ---- 內文編輯框（所見即所得）---- */
+.md-ed{display:block;width:100%;box-sizing:border-box;min-height:9em;max-height:45vh;overflow-y:auto;margin:5px 0 12px;padding:8px 10px;border:1px solid #eee;border-radius:8px;background:#FAFAFA;font-family:inherit;font-size:1rem;line-height:1.6;white-space:pre-wrap;word-break:break-word;-webkit-user-select:text;user-select:text;-webkit-touch-callout:default;outline:none}
+.md-ed:focus{border-color:#C9B8A8;background:#fff}
+.md-ed:empty::before{content:attr(data-ph);color:#bbb;pointer-events:none}
+.modal-content.has-md{width:92%!important;max-width:480px!important}
+.modal-content textarea{min-height:6.5em}
+.md-bar button:last-child:not(.md-c){color:#999}
+
+/* ---- 購物頁：篩選列、店家標題、分類列吸頂 ---- */
+#shop-body{--sf:52px;--ss:50px}
+details.shop-store{overflow:visible!important}   /* 原本的 overflow:hidden 會讓吸頂失效 */
+.shop-filter{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;margin:0 -20px 12px;padding:8px 20px;background:rgba(248,248,246,.95);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border-bottom:1px dashed #d8cfc4}
+.shop-store>summary{border-radius:16px}
+.shop-store[open]>summary{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--sf));z-index:20;border-radius:16px 16px 0 0;box-shadow:0 2px 4px rgba(74,66,61,.08)}
+.shop-cats{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--sf) + var(--ss));z-index:10;background:#fff;margin:0 -12px 6px;padding:6px 12px 0;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;border-bottom:1px dashed var(--line)}
+.shop-cats::-webkit-scrollbar{display:none}
+.shop-cats .shop-chip{flex:none;white-space:nowrap}
