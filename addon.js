@@ -23,11 +23,63 @@
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   // 簡易文字格式：**粗體**、*斜體*、~~刪除線~~、<span style="color: #ff0000;">文字</span>（只允許顏色，其他一律當一般文字）
-  const mdEm = t => t.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>').replace(/~~([\s\S]+?)~~/g, '<s>$1</s>').replace(/\*([^*\n]+?)\*/g, '<i>$1</i>');
+  const mdEm = t => t.replace(/\*\*\*([\s\S]+?)\*\*\*/g, '<b><i>$1</i></b>').replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>').replace(/~~([\s\S]+?)~~/g, '<s>$1</s>').replace(/\*([^*\n]+?)\*/g, '<i>$1</i>');
   const md = t => mdEm(esc(t).replace(/&lt;span style=(?:&quot;|')color:\s*(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\s*;?(?:&quot;|')&gt;([\s\S]*?)&lt;\/span&gt;/g, '<span style="color:$1">$2</span>'));
   const MDC = ['#e53935', '#fb8c00', '#43a047', '#1e88e5', '#8e24aa'];
-  const mdBar = id => `<div class="md-bar"><button type="button" onclick="mdW('${id}','**','**')"><b>B</b></button><button type="button" onclick="mdW('${id}','*','*')"><i>I</i></button><button type="button" onclick="mdW('${id}','~~','~~')"><s>S</s></button>${MDC.map(c => `<button type="button" class="md-c" style="background:${c}" onclick="mdW('${id}','&lt;span style=&quot;color: ${c};&quot;&gt;','&lt;/span&gt;')"></button>`).join('')}</div>`;
-  window.mdW = (id, a, b) => { const t = $(id); if (!t) return; const st = t.selectionStart, en = t.selectionEnd, v = t.value, sel = v.slice(st, en) || '文字'; t.value = v.slice(0, st) + a + sel + b + v.slice(en); t.focus(); t.setSelectionRange(st + a.length, st + a.length + sel.length); };
+  const mdBar = id => `<div class="md-bar" onmousedown="event.preventDefault()"><button type="button" onclick="mdW('${id}','**','**')"><b>B</b></button><button type="button" onclick="mdW('${id}','*','*')"><i>I</i></button><button type="button" onclick="mdW('${id}','~~','~~')"><s>S</s></button>${MDC.map(c => `<button type="button" class="md-c" style="background:${c}" onclick="mdW('${id}','&lt;span style=&quot;color: ${c};&quot;&gt;','&lt;/span&gt;')"></button>`).join('')}<button type="button" title="清除格式" onclick="mdW('${id}','','')">✕</button></div>`;
+  // ---------- 所見即所得編輯框 ----------
+  // 把「有工具列的 <textarea>」換成可以直接看到粗體／斜體／顏色的編輯框；.value 讀寫仍是原本的 **粗體**、<span style="color: ..."> 格式，所以儲存與顯示的程式都不用改
+  const hex2 = n => ('0' + (+n).toString(16)).slice(-2);
+  const cssCol = c => { c = (c || '').trim(); const m = c.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i); return m ? '#' + hex2(m[1]) + hex2(m[2]) + hex2(m[3]) : (/^(#[0-9a-f]{3,8}|[a-z]+)$/i.test(c) ? c : ''); };
+  const mdHtml = t => md(t).replace(/\r?\n/g, '<br>');
+  const htmlMd = root => {
+    let o = '';
+    const nl = () => { if (o && !o.endsWith('\n')) o += '\n'; };
+    const walk = n => n.childNodes.forEach(c => {
+      if (c.nodeType === 3) { o += c.nodeValue.replace(/\u00a0/g, ' '); return; }
+      if (c.nodeType !== 1) return;
+      const tg = c.tagName;
+      if (tg === 'BR') { o += '\n'; return; }
+      const blk = tg === 'DIV' || tg === 'P' || tg === 'LI'; if (blk) nl();
+      const s = c.style || {}, fw = s.fontWeight, col = cssCol(tg === 'FONT' ? c.getAttribute('color') : s.color);
+      const b = tg === 'B' || tg === 'STRONG' || fw === 'bold' || +fw >= 600, it = tg === 'I' || tg === 'EM' || s.fontStyle === 'italic';
+      const x = tg === 'S' || tg === 'STRIKE' || tg === 'DEL' || /line-through/.test(s.textDecoration || s.textDecorationLine || '');
+      const L = o.length;
+      if (b && it) o += '***'; else if (b) o += '**'; else if (it) o += '*';
+      if (x) o += '~~'; if (col) o += '<span style="color: ' + col + ';">';
+      const L2 = o.length; walk(c);
+      if (o.length === L2) { o = o.slice(0, L); return; }   // 裡面沒有字就不留符號
+      if (col) o += '</span>'; if (x) o += '~~'; if (b && it) o += '***'; else if (b) o += '**'; else if (it) o += '*';
+      if (blk) nl();
+    });
+    walk(root); return o.replace(/\n+$/, '');
+  };
+  const mdUp = ta => {
+    if (ta.dataset.md) return; ta.dataset.md = '1';
+    const ed = document.createElement('div');
+    ed.className = 'md-ed'; ed.contentEditable = 'true'; ed.setAttribute('data-ph', ta.getAttribute('placeholder') || '');
+    Object.defineProperty(ed, 'value', { get: () => htmlMd(ed), set: v => { ed.innerHTML = mdHtml(v || ''); } });
+    ed.value = ta.value;
+    ed.addEventListener('paste', e => { e.preventDefault(); document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain')); });   // 貼上一律只留純文字
+    const id = ta.id; ta.replaceWith(ed); ed.id = id;
+    const mc = ed.closest('.modal-content'); if (mc) mc.classList.add('has-md');   // 有內文框的視窗放寬一點
+  };
+  const mdScan = () => document.querySelectorAll('textarea').forEach(t => { const p = t.previousElementSibling; if (p && p.classList && p.classList.contains('md-bar')) mdUp(t); });
+  new MutationObserver(mdScan).observe(document.body, { childList: true, subtree: true }); mdScan();
+  const mdSel = {};   // 記住每個編輯框最後的選取範圍，按工具列時才不會掉
+  document.addEventListener('selectionchange', () => { const s = getSelection(); if (!s || !s.rangeCount) return; const n = s.anchorNode, e = n && (n.nodeType === 1 ? n : n.parentElement), ed = e && e.closest && e.closest('.md-ed'); if (ed) mdSel[ed.id] = s.getRangeAt(0).cloneRange(); });
+  window.mdW = (id, a, b) => {
+    const t = $(id); if (!t) return;
+    if (t.tagName === 'TEXTAREA') {   // 後備：萬一沒被換成編輯框，還是用原本的做法
+      const st = t.selectionStart, en = t.selectionEnd, v = t.value, sel = v.slice(st, en) || '文字'; t.value = v.slice(0, st) + a + sel + b + v.slice(en); t.focus(); t.setSelectionRange(st + a.length, st + a.length + sel.length); return;
+    }
+    t.focus(); const s = getSelection();
+    if (!(s.rangeCount && t.contains(s.anchorNode))) { s.removeAllRanges(); let r = mdSel[id]; if (!r) { r = document.createRange(); r.selectNodeContents(t); r.collapse(false); } s.addRange(r); }
+    document.execCommand('styleWithCSS', false, false);
+    if (a === '**') document.execCommand('bold'); else if (a === '*') document.execCommand('italic'); else if (a === '~~') document.execCommand('strikeThrough');
+    else if (!a) document.execCommand('removeFormat');
+    else { const c = (a.match(/#[0-9a-f]{3,8}/i) || [])[0]; if (c) document.execCommand('foreColor', false, c); }
+  };
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   const trip = new URLSearchParams(location.search).get('trip') || 'default';
   // ---------- 每個旅程各自的主畫面名稱／圖示（圖片檔放在 index.html 同一個資料夾）----------
@@ -804,8 +856,9 @@
     }).catch(() => { });
   }
   const shopPhDel = it => { if (it && it.ph) { ready.then(() => photoRef('shop_' + it.id).remove()).catch(() => { }); try { Object.keys(localStorage).filter(k => k.indexOf('sp_' + it.id + '_') === 0).forEach(k => localStorage.removeItem(k)); } catch (e) { } } };
-  window.shopOpen = (sid, open, el) => { shopOpenSt[sid] = open; if (open && el) el.querySelectorAll('img[data-sid]').forEach(shopPh); };
-  window.shopFilter = v => { shopHotOnly = v; renderShop(); };
+  window.shopOpen = (sid, open, el) => { if (open && el) el.querySelectorAll('img[data-sid]').forEach(shopPh); };   // 只負責載入照片；展開狀態改由 shopTog 記錄（避免畫面自動觸發的 toggle 事件把「預設收合」蓋掉）
+  window.shopTog = (sid, el) => { shopOpenSt[sid] = !el.open; };   // 在 summary 被點之前呼叫：點下去後會變成相反狀態
+  window.shopFilter = v => shopView(v ? 'hot' : 'all');
   window.shopThSet = (k, v) => { data.settings = data.settings || {}; data.settings[k] = Math.max(1, parseInt(v) || 1); shopCommit(); };
   window.shopVote = (iid, v) => {
     const cur = (SV[me] || {})[iid], nv = cur === v ? null : v; SV[me] = SV[me] || {};
@@ -821,7 +874,7 @@
     ready.then(() => { const r0 = ref.child('shopw/' + me + '/' + iid); return on ? r0.set(1) : r0.remove(); }).catch(() => toast('❌ 想買未同步', 1));
     renderShop();
   };
-  window.shopView = v => { shopMine = v === 'mine'; renderShop(); };
+  window.shopView = v => { shopMine = v === 'mine'; shopHotOnly = v === 'hot'; renderShop(); };   // 全部／我的清單／只看激推：三選一
   window.shopBoughtTog = iid => {   // 我的想買紀錄：1 = 想買，2 = 已買（已買仍算在想買人數裡）
     SWT[me] = SWT[me] || {}; if (!SWT[me][iid]) return;
     const v = SWT[me][iid] === 2 ? 1 : 2; SWT[me][iid] = v;
@@ -924,7 +977,7 @@
     return `<div class="action-link shop-link" onclick="shopGo('${sid}')"><i class="fas fa-bag-shopping"></i> 購物${n ? ' 🔥' + n : ''}</div>`;
   };
   window.shopGo = sid => {
-    shopHotOnly = false; shopOpenSt[sid] = true; switchPage('shop', shopNavEl); renderShop();
+    shopHotOnly = false; shopMine = false; shopOpenSt[sid] = true; switchPage('shop', shopNavEl); renderShop();
     setTimeout(() => { const el = document.querySelector('#shop-body [data-store="' + sid + '"]'); if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1800); } }, 150);
   };
   function shopItemHtml(st, o) {
@@ -934,6 +987,9 @@
     const pic = it.ph ? `<img class="shop-ph" data-sid="${it.id}" data-pv="${it.pv || 0}" alt="" onclick="this.src&&viewImg(this.src)">` : it.img ? `<img class="shop-ph" src="${esc(it.img)}" alt="" loading="lazy" onclick="viewImg(this.src)" onerror="this.remove()">` : '';
     return `<div class="shop-item ${s} ${o.wh ? 'want' : ''} ${shopMine && myW === 2 ? 'bought' : ''}"><div class="shop-row">${pic}<div class="shop-main"><div class="shop-nm">${tag}${esc(it.name)}${shopCatTag(it)}</div>${shopMeta(it)}${shopTagsHtml(it)}</div></div>${it.note ? `<div class="shop-note">${md(it.note)}</div>` : ''}${buyRow}<div class="shop-vote">${[['r', '👍', '推薦'], ['o', '😐', '普通'], ['n', '👎', '不推']].map(([k, e, l]) => `<button type="button" class="${k} ${my === k ? 'on' : ''}" onclick="shopVote('${it.id}','${k}')">${e} ${l} ${t[k]}</button>`).join('')}<button type="button" class="w ${myW ? 'on' : ''}" onclick="shopWantTog('${it.id}')">🛒 想買 ${o.w}</button></div><div class="ed admin-only"><span onclick="shopItemEdit('${st.id}','${it.id}')">✏️ 編輯</span><span onclick="shopMove('i','${st.id}','${it.id}',-1)">▲ 上移</span><span onclick="shopMove('i','${st.id}','${it.id}',1)">▼ 下移</span></div></div>`;
   }
+  // 吸頂：量出「篩選列」和「店家標題」的高度，讓店家標題、分類列依序疊在下面
+  const shopStick = () => { const bd = $('shop-body'); if (!bd) return; const f = bd.querySelector('.shop-filter'), s = bd.querySelector('.shop-store>summary'); if (f && f.offsetHeight) bd.style.setProperty('--sf', f.offsetHeight + 'px'); if (s && s.offsetHeight) bd.style.setProperty('--ss', s.offsetHeight + 'px'); };
+  window.addEventListener('resize', shopStick);
   function renderShop() {
     const bd = $('shop-body'); if (!bd) return;
     const sts = S().stores, th = shopTh(), rank = o => o.s === 'hot' ? 0 : (o.wh && o.s !== 'bad') ? 1 : o.s === 'mix' ? 2 : o.s === '' ? 3 : 4;   // 激推最前面，其次熱門想買，地雷墊底；同組內想買人數多的在前
@@ -941,7 +997,7 @@
     let h = `<div class="admin-only shop-adm"><div class="info-card shop-set">⚙️ <span>🔥 激推：</span><input type="number" min="1" inputmode="numeric" value="${th.hot}" onchange="shopThSet('shopHot',this.value)"> 人推薦　<span>💣 地雷：</span><input type="number" min="1" inputmode="numeric" value="${th.bad}" onchange="shopThSet('shopBad',this.value)"> 人不推　<span>🛒 熱門想買：</span><input type="number" min="1" inputmode="numeric" value="${th.want}" onchange="shopThSet('shopWant',this.value)"> 人想買${mgr('cats', '🗂️ 分類：', '分類')}${mgr('tags', '🔖 標籤：', '標籤')}</div><button class="btn btn-outline" onclick="shopStoreEdit()">+ 新增店家／地點</button></div>`;
     const myAll = []; sts.forEach(st => (st.items || []).forEach(it => { const v = (SWT[me] || {})[it.id]; if (v) myAll.push(v); }));
     const mineN = myAll.length, mineB = myAll.filter(v => v === 2).length;
-    if (sts.length) h += `<div class="shop-filter"><span class="shop-chip ${shopMine ? '' : 'on'}" onclick="shopView('all')">全部商品</span><span class="shop-chip ${shopMine ? 'on' : ''}" onclick="shopView('mine')">🛒 我的清單 ${mineB}/${mineN}</span><span class="shop-chip ${shopHotOnly ? 'on' : ''}" onclick="shopFilter(${!shopHotOnly})">🔥 只看激推</span></div>`;
+    if (sts.length) h += `<div class="shop-filter"><span class="shop-chip ${!shopMine && !shopHotOnly ? 'on' : ''}" onclick="shopView('all')">全部商品</span><span class="shop-chip ${shopMine ? 'on' : ''}" onclick="shopView('mine')">🛒 我的清單 ${mineB}/${mineN}</span><span class="shop-chip ${shopHotOnly ? 'on' : ''}" onclick="shopView('hot')">🔥 只看激推</span></div>`;
     else h += '<div class="muted" style="text-align:center;margin-top:40px">還沒有店家<br>（管理員可按上方 + 新增）</div>';
     sts.forEach(st => {
       const all = (st.items || []).map((it, i) => { const t = shopTally(it.id); const w = shopWantN(it.id); return { it, i, t, s: shopStatus(t), w, wh: w >= th.want }; }).filter(o => !shopMine || (SWT[me] || {})[o.it.id]);
@@ -949,16 +1005,17 @@
       const present = cats.filter(c => all.some(o => o.it.cat === c.id)), noneN = all.filter(o => !validCat(o)).length;
       let sel = shopCatSel[st.id] || ''; if (sel === '_none' ? !(present.length && noneN) : (sel && !present.some(c => c.id === sel))) sel = '';
       const bought = o => shopMine && (SWT[me] || {})[o.it.id] === 2 ? 1 : 0;
-      const shown = all.filter(o => (!shopHotOnly || o.s === 'hot') && (!sel || (sel === '_none' ? !validCat(o) : o.it.cat === sel))).sort((a, b) => bought(a) - bought(b) || rank(a) - rank(b) || b.w - a.w || a.i - b.i);   // 我的清單：已買的沉到最下面
+      const shown = all.filter(o => (!shopHotOnly || o.s === 'hot') && (!sel || (sel === '_none' ? !validCat(o) : o.it.cat === sel))).sort((a, b) => bought(a) - bought(b) || rank(a) - rank(b) || a.i - b.i);   // 我的清單：已買的沉到最下面；只有變成激推／熱門想買才會往前排，單純有人按想買不會移動商品
       const chip = (id, label, n) => `<span class="shop-chip sm ${sel === id ? 'on' : ''}" onclick="shopCatPick('${st.id}','${id}')">${label} ${n}</span>`;
       const catChips = present.length ? `<div class="shop-cats">${chip('', '全部', all.length)}${present.map(c => chip(c.id, esc(c.icon ? c.icon + ' ' : '') + esc(c.name), all.filter(o => o.it.cat === c.id).length)).join('')}${noneN ? chip('_none', '未分類', noneN) : ''}</div>` : '';
       if ((shopHotOnly || shopMine) && !shown.length) return;
-      const nHot = all.filter(o => o.s === 'hot').length, open = (shopHotOnly || shopMine) ? shopOpenSt[st.id] !== false : !!shopOpenSt[st.id];
-      h += `<details class="info-card shop-store" data-store="${st.id}" ${open ? 'open' : ''} ontoggle="shopOpen('${st.id}',this.open,this)"><summary><span>${esc(st.icon || '🏪')} ${esc(st.name)}</span><span class="shop-cnt">${nHot ? `<b class="shop-hotn">🔥${nHot}</b>　` : ''}${all.length} 項</span></summary><div class="shop-list"><div class="admin-only" style="gap:8px"><button class="btn btn-outline" onclick="shopItemEdit('${st.id}')">+ 新增商品</button></div><div class="ed admin-only"><span onclick="shopStoreEdit('${st.id}')">✏️ 編輯店家</span><span onclick="shopMove('s','${st.id}',null,-1)">▲ 上移</span><span onclick="shopMove('s','${st.id}',null,1)">▼ 下移</span></div>${catChips}${shown.map(o => shopItemHtml(st, o)).join('') || '<div class="muted" style="text-align:center;padding:10px">這間店還沒有推薦商品</div>'}</div></details>`;
+      const nHot = all.filter(o => o.s === 'hot').length, open = shopHotOnly ? shopOpenSt[st.id] !== false : !!shopOpenSt[st.id];
+      h += `<details class="info-card shop-store" data-store="${st.id}" ${open ? 'open' : ''} ontoggle="shopOpen('${st.id}',this.open,this)"><summary onclick="shopTog('${st.id}',this.parentNode)"><span>${esc(st.icon || '🏪')} ${esc(st.name)}</span><span class="shop-cnt">${nHot ? `<b class="shop-hotn">🔥${nHot}</b>　` : ''}${all.length} 項</span></summary><div class="shop-list"><div class="admin-only" style="gap:8px"><button class="btn btn-outline" onclick="shopItemEdit('${st.id}')">+ 新增商品</button></div><div class="ed admin-only"><span onclick="shopStoreEdit('${st.id}')">✏️ 編輯店家</span><span onclick="shopMove('s','${st.id}',null,-1)">▲ 上移</span><span onclick="shopMove('s','${st.id}',null,1)">▼ 下移</span></div>${catChips}${shown.map(o => shopItemHtml(st, o)).join('') || '<div class="muted" style="text-align:center;padding:10px">這間店還沒有推薦商品</div>'}</div></details>`;
     });
     if (shopMine && sts.length && !mineN) h += '<div class="muted" style="text-align:center;margin-top:30px">還沒有想買的商品<br>在商品卡片按「🛒 想買」就會出現在這裡</div>';
     bd.innerHTML = h;
     bd.querySelectorAll('details[open] img[data-sid]').forEach(shopPh);
+    shopStick(); requestAnimationFrame(shopStick);
   }
   renderShop();
 
