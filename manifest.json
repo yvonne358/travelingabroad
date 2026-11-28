@@ -1,6 +1,6 @@
 {
-  "name": "福岡之旅",
-  "short_name": "福岡之旅",
+  "name": "旅程",
+  "short_name": "旅程",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
