@@ -87,7 +87,7 @@
   // 格式：'前半段': { name: '主畫面顯示的名稱', icon: '主畫面圖示.png', bg: '內頁背景圖.jpg' }，三項都可以只寫需要的；沒列在這裡的旅程用預設值
   const TRIP_APP = {
     // 'fukuoka2027': { name: '福岡之旅', icon: 'app-icon.png', bg: 'header-bg.jpg' },
-    // 'hokkaido2027': { name: '福岡之旅', icon: 'icon-hokkaido.png', bg: 'bg-hokkaido.jpg' },
+    'hokkaido2027': { name: '北海道員旅', icon: 'icon-hokkaido.png', bg: 'bg-hokkaido.jpg' },
   };
   const tripCfg = () => { let best = null; for (const k in TRIP_APP) if ((trip === k || trip.startsWith(k + '-')) && (best === null || k.length > best.length)) best = k; return TRIP_APP[best] || {}; };   // 取最長的相符前半段
   { const c = tripCfg(); if (c && c.bg) document.documentElement.style.setProperty('--hero-img', "url('" + new URL(c.bg, location.href).href + "')"); }   // 這個旅程的內頁背景圖
