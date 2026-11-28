@@ -104,7 +104,7 @@
     } catch (e) { }
   })();
   // 管理員模式閒置自動上鎖（分鐘；設 0 代表不自動上鎖）
-  const AUTO_LOCK_MIN = 5; let lastAct = Date.now();
+  const AUTO_LOCK_MIN = 0; let lastAct = Date.now();
   ['click', 'touchstart', 'keydown'].forEach(e => document.addEventListener(e, () => { lastAct = Date.now(); }, true));
   setInterval(() => { if (AUTO_LOCK_MIN && typeof isAdminMode !== 'undefined' && isAdminMode && Date.now() - lastAct > AUTO_LOCK_MIN * 60000) toggleAdminMode(); }, 20000);
   const me = localStorage.voter_id || (localStorage.voter_id = 'v' + Math.random().toString(36).slice(2, 10));
